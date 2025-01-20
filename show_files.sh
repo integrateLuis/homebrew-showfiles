@@ -30,18 +30,19 @@ usage() {
   echo "Usage: $0 [options] [paths...]"
   echo ""
   echo "Options:"
-  echo "  -d, --dirs <names>       Comma-separated list of directory names to search."
-  echo "  -f, --filename <pattern> Pattern to filter files by name."
+  echo "  -d, --dirs <dir1> [dir2] [dir3] ...  One or more directory names to search (space separated)."
+  echo "                                      Also accepts: --dirs=dir1,dir2"
+  echo "  -f, --filename <pattern>            Pattern to filter files by name."
   echo ""
   echo "Examples:"
   echo "  $0 main.py"
   echo "  $0 src/ utils/"
-  echo "  $0 --dirs=models"
-  echo "  $0 -d=models,api"
-  echo "  $0 --dirs models,api"
+  echo "  $0 --dirs models"
+  echo "  $0 -d models api"
+  echo "  $0 --dirs=models,api"
   echo "  $0 --filename=user"
   echo "  $0 -f user src/"
-  echo "  $0 -d=accounts,business_model -f=user"
+  echo "  $0 -d accounts business_model -f user"
   exit 1
 }
 
@@ -84,6 +85,9 @@ process_file() {
     return
   fi
 
+  # Si es .pyc, lo ignoramos
+  [[ "$file_path" == *.pyc ]] && return
+
   if [ -n "$filename_pattern" ]; then
     # If we have a filename pattern, check if it matches
     if [[ "$file_path" == *"$filename_pattern"* ]]; then
@@ -113,7 +117,7 @@ process_directory() {
 
   while IFS= read -r -d '' file; do
     process_file "$file"
-  done < <(find "$dir" -type f -print0)
+  done < <(find "$dir" -type f ! -name '*.pyc' -print0)
 }
 
 ######################################
@@ -125,12 +129,23 @@ ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case $1 in
+    ### CAMBIOS: -d / --dirs
     -d|--dirs)
       shift
-      dir_names="$1"
-      shift
+      # Podríamos toparnos con varias palabras que no empiecen con '-'
+      # y queremos agregarlas a dir_names separados por coma.
+      while [[ $# -gt 0 && ! "$1" =~ ^- ]]; do
+        if [ -z "$dir_names" ]; then
+          dir_names="$1"
+        else
+          dir_names="$dir_names,$1"
+        fi
+        shift
+      done
       ;;
+    # Alternativamente, si se usa --dirs=dir1,dir2...
     --dirs=*)
+      # Aquí se considera el formato --dirs=dir1,dir2
       dir_names="${1#*=}"
       shift
       ;;
