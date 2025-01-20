@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 ######################################
-# Determine the language based on the file extension
-# for use in the code block.
+# Determine the language for the code block
+# based on the file extension
 ######################################
 get_lang_by_extension() {
   local filename="$1"
@@ -19,10 +19,9 @@ get_lang_by_extension() {
     cpp)  echo "cpp" ;;
     c)    echo "c" ;;
     md)   echo "markdown" ;;
-    *)    echo "" ;;  # Not specified
+    *)    echo "" ;;
   esac
 }
-
 
 ######################################
 # Show usage/help
@@ -31,7 +30,8 @@ usage() {
   echo "Usage: $0 [options] [paths...]"
   echo ""
   echo "Options:"
-  echo "  -d, --dirs   Comma-separated list of directory names to search."
+  echo "  -d, --dirs <names>       Comma-separated list of directory names to search."
+  echo "  -f, --filename <pattern> Pattern to filter files by name."
   echo ""
   echo "Examples:"
   echo "  $0 main.py"
@@ -39,7 +39,9 @@ usage() {
   echo "  $0 --dirs=models"
   echo "  $0 -d=models,api"
   echo "  $0 --dirs models,api"
-  echo ""
+  echo "  $0 --filename=user"
+  echo "  $0 -f user src/"
+  echo "  $0 -d=accounts,business_model -f=user"
   exit 1
 }
 
@@ -57,52 +59,88 @@ show_file_content() {
   if [ -n "$lang" ]; then
     echo '```'"$lang"
     cat "$file_path"
-    echo # Empty line for correct formatting on markdown render
+    echo
     echo '```'
   else
-    # If no specific language is determined, still show a generic code block
     echo '```'
     cat "$file_path"
-    echo # Empty line for correct formatting on markdown render
+    echo
     echo '```'
   fi
   echo ""
 }
 
 ######################################
-# Process a directory, showing the
-# content of each file (recursively).
+# Process an individual file:
+# - If a filename pattern was specified,
+#   show it only if it matches.
+# - If no pattern was specified, show it.
+######################################
+process_file() {
+  local file_path="$1"
+
+  # Check if it's a file (exists and is not a directory)
+  if [ ! -f "$file_path" ]; then
+    return
+  fi
+
+  if [ -n "$filename_pattern" ]; then
+    # If we have a filename pattern, check if it matches
+    if [[ "$file_path" == *"$filename_pattern"* ]]; then
+      show_file_content "$file_path"
+    fi
+  else
+    # No pattern => show it directly
+    show_file_content "$file_path"
+  fi
+}
+
+######################################
+# Process a directory
+#
+# - If a filename pattern exists, only show
+#   files whose name contains that pattern.
+# - Otherwise, show all files.
 ######################################
 process_directory() {
   local dir="$1"
-  # Here you could filter by extensions or show all files
-  # In this example, all files are listed.
-  # Adjust as needed (e.g., find "$dir" -type f -name "*.py")
+
+  # Check if it's a directory
+  if [ ! -d "$dir" ]; then
+    echo "Does not exist or is not a directory: $dir"
+    return
+  fi
+
   while IFS= read -r -d '' file; do
-    show_file_content "$file"
+    process_file "$file"
   done < <(find "$dir" -type f -print0)
 }
 
 ######################################
-# ARGUMENT PARSING
+# ARG PARSING
 ######################################
-# List of directories to search. Can be multiple ("models,api,...")
 dir_names=""
-
+filename_pattern=""
 ARGS=()
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     -d|--dirs)
-      # For cases like: showfiles --dirs models,api
-      # or showfiles -d models,api
       shift
       dir_names="$1"
       shift
       ;;
     --dirs=*)
-      # For cases like: showfiles --dirs=models,api
-      # Extract everything after '='
       dir_names="${1#*=}"
+      shift
+      ;;
+    -f|--filename)
+      shift
+      filename_pattern="$1"
+      shift
+      ;;
+    --filename=*)
+      filename_pattern="${1#*=}"
       shift
       ;;
     -h|--help)
@@ -115,35 +153,38 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-
 ######################################
 # MAIN LOGIC
 ######################################
-# 1) If direct paths were specified in ARGS, process them first
+# 1) Process direct arguments:
+#    - If they are directories, process_directory
+#    - If they are files, process_file
 if [ "${#ARGS[@]}" -gt 0 ]; then
   for path_arg in "${ARGS[@]}"; do
-    if [ -f "$path_arg" ]; then
-      # It's a file
-      show_file_content "$path_arg"
-    elif [ -d "$path_arg" ]; then
-      # It's a directory
+    if [ -d "$path_arg" ]; then
       process_directory "$path_arg"
+    elif [ -f "$path_arg" ]; then
+      process_file "$path_arg"
     else
       echo "Does not exist or is not a file/directory: $path_arg"
     fi
   done
 fi
 
-# 2) If directory names were specified (-d, --dirs)
+# 2) If directories were specified via -d/--dirs,
+#    search for directories with those names and
+#    process them
 if [ -n "$dir_names" ]; then
-  # Convert the comma-separated list into an array
   IFS=',' read -ra dirs_to_find <<< "$dir_names"
-
   for dir_to_find in "${dirs_to_find[@]}"; do
-    # Use find to locate directories matching the name
-    while IFS= read -r -d '' found_dir; do
-      # Process each found directory
+    while IFS= read -r found_dir; do
       process_directory "$found_dir"
-    done < <(find . -type d -name "$dir_to_find" -print0)
+    done < <(find . -type d -name "$dir_to_find" 2>/dev/null)
   done
+fi
+
+# 3) If no ARGS or --dirs were provided,
+#    default to processing the current directory
+if [ -z "$dir_names" ] && [ "${#ARGS[@]}" -eq 0 ]; then
+  process_directory "."
 fi
