@@ -117,7 +117,12 @@ process_directory() {
 
   while IFS= read -r -d '' file; do
     process_file "$file"
-  done < <(find "$dir" -type f ! -name '*.pyc' -print0)
+  done < <(
+    find "$dir" -type f \
+      ! -path '*/.git/*' \
+      ! -name '*.pyc' \
+      -print0
+  )
 }
 
 ######################################
